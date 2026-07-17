@@ -1,0 +1,13 @@
+{
+  "domain": "phonesense",
+  "name": "PhoneSense",
+  "version": "0.1.0",
+  "documentation": "https://github.com/lrehmann/phonesense",
+  "issue_tracker": "https://github.com/lrehmann/phonesense/issues",
+  "codeowners": ["@lrehmann"],
+  "config_flow": true,
+  "iot_class": "local_push",
+  "dependencies": ["bluetooth", "media_source"],
+  "after_dependencies": ["bluetooth_adapters", "stream"],
+  "requirements": []
+}
