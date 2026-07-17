@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1
+
+- Prevent camera start/stop commands from blocking the Android service main thread behind encrypted-media database work.
+- Fix the resulting camera-service ANR and foreground-service crash when switching front and rear streams.
+- Preserve Android 6.0/API 23 compatibility in camera capability enumeration.
+
 ## 0.1.0
 
 - Initial HACS-compatible PhoneSense Home Assistant integration.
