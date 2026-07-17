@@ -56,7 +56,35 @@ class PhoneSenseCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "observed_at": observed_at,
             "received_monotonic": time.monotonic(),
         }
+        self._reflect_live_camera_session(camera_id)
         return True
+
+    def _reflect_live_camera_session(self, camera_id: str) -> None:
+        """Make frame-proven camera state visible without waiting for health polling."""
+        device = getattr(self, "device", None)
+        if device is None:
+            return
+        sessions = device.health.setdefault("media_sessions", {})
+        if not isinstance(sessions, dict):
+            sessions = {}
+            device.health["media_sessions"] = sessions
+        changed = False
+        if str(device.platform).lower() == "ios":
+            for active_camera_id in list(sessions):
+                if active_camera_id.startswith("camera.") and active_camera_id != camera_id:
+                    sessions.pop(active_camera_id, None)
+                    changed = True
+        existing = sessions.get(camera_id)
+        if not isinstance(existing, dict) or existing.get("active") is not True:
+            sessions[camera_id] = {
+                "camera_id": camera_id,
+                "active": True,
+                "source": "live_frame",
+            }
+            changed = True
+        if changed:
+            self.data = self._as_data()
+            self.async_set_updated_data(self.data)
 
     def mark_live_presence(self, minimum_interval_seconds: float = 30.0) -> bool:
         """Treat an authenticated frame as presence without persisting every frame."""

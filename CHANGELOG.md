@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.3
+
+- Reflect an authenticated live camera frame immediately in Home Assistant instead of waiting for the phone's next periodic health upload.
+- On iOS, atomically mark the prior lens idle when a frame proves that the single capture session has switched to the other camera.
+- Preserve simultaneous camera-session state for Android devices that support concurrent streams.
+
 ## 0.1.2
 
 - Add capability-driven iOS telemetry for magnetometer, device motion and attitude, barometer, pedometer, motion activity, proximity, orientation, heading, screen brightness, storage, low-power mode, and audio levels.
