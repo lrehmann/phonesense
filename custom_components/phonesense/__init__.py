@@ -4,6 +4,7 @@ from homeassistant.config_entries import ConfigEntry
 from datetime import datetime
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
@@ -15,6 +16,8 @@ from .models import Capability, Command, PhoneSenseDevice, StreamState
 from .storage import PhoneSenseStore
 from .repairs import update_device_issues
 from .entity import control_supported
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
