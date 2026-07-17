@@ -7,7 +7,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from datetime import datetime, timezone
 
 from .coordinator import PhoneSenseCoordinator
-from .entity import PhoneSenseEntity, entity_supported
+from .entity import PhoneSenseEntity, camera_device_info, entity_supported
 from .models import stale_after_seconds
 
 
@@ -16,12 +16,14 @@ STREAMS = {
     "power.charging": ("Charging", BinarySensorDeviceClass.BATTERY_CHARGING),
     "camera.active": ("Camera active", BinarySensorDeviceClass.RUNNING),
     "audio.active": ("Microphone active", BinarySensorDeviceClass.RUNNING),
+    "system.low_power_mode": ("Low Power Mode", BinarySensorDeviceClass.POWER),
 }
 CAPABILITIES = {
     "proximity.state": "sensor.proximity",
     "power.charging": "system.battery",
     "camera.active": "camera.rear.0",
     "audio.active": "audio.microphone",
+    "system.low_power_mode": "system.low_power_mode",
 }
 
 
@@ -57,13 +59,36 @@ class PhoneSenseOnlineBinarySensor(PhoneSenseEntity, BinarySensorEntity):
         return (datetime.now(timezone.utc) - last_seen).total_seconds() <= stale_after
 
 
+class PhoneSenseCameraOccupancySensor(PhoneSenseEntity, BinarySensorEntity):
+    _require_runtime_support = False
+    _attr_name = "Person occupancy"
+    _attr_device_class = BinarySensorDeviceClass.OCCUPANCY
+
+    def __init__(self, coordinator: PhoneSenseCoordinator, camera_id: str) -> None:
+        PhoneSenseEntity.__init__(self, coordinator, f"{camera_id}.occupancy")
+        capability = coordinator.device.capabilities.get(camera_id)
+        self._attr_device_info = camera_device_info(coordinator, camera_id, capability.metadata if capability else {})
+
+    @property
+    def is_on(self):
+        return self.native_value is True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     coordinator = hass.data["phonesense"]["coordinators"][entry.data["device_id"]]
-    async_add_entities([
+    entities = [
         PhoneSenseOnlineBinarySensor(coordinator),
         *[
             PhoneSenseBinarySensor(coordinator, key)
             for key in STREAMS
             if entity_supported(coordinator, key, CAPABILITIES[key])
         ],
-    ])
+    ]
+    entities.extend(
+        PhoneSenseCameraOccupancySensor(coordinator, camera_id)
+        for camera_id, capability in coordinator.device.capabilities.items()
+        if camera_id.startswith("camera.")
+        and capability.status == "available"
+        and capability.metadata.get("analytics") is True
+    )
+    async_add_entities(entities)
