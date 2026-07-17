@@ -34,8 +34,8 @@ SHA-256 checksums are included in the release notes.
 
 ## What PhoneSense exposes
 
-- Numeric motion, rotation, location, battery, charging, thermal, light, proximity, sound-level, and network telemetry when supported by the phone.
-- Per-camera stream switches, live Home Assistant camera entities, snapshots, local segmented recording, and hardware-discovered controls.
+- Numeric motion, rotation, magnetometer, attitude, heading, barometer, pedometer, activity, location, battery, charging, thermal, light, proximity, sound-level, screen, storage, and network telemetry when supported by the phone.
+- Per-camera stream switches, live Home Assistant camera entities, snapshots, brightness and motion analysis, local segmented recording, and hardware-discovered controls.
 - Phone flashlight and iOS display as Home Assistant lights.
 - Android speaker as a media player and optional continuous vibration control.
 - Android Bluetooth advertisements as a Home Assistant remote Bluetooth scanner.

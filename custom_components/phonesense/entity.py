@@ -11,11 +11,47 @@ from .models import stale_after_seconds
 STREAM_MODULES = {
     "location.gps": "location",
     "motion.acceleration_rms": "motion",
+    "motion.acceleration_x": "motion",
+    "motion.acceleration_y": "motion",
+    "motion.acceleration_z": "motion",
     "motion.rotation_rate": "motion",
+    "motion.rotation_x": "motion",
+    "motion.rotation_y": "motion",
+    "motion.rotation_z": "motion",
+    "motion.magnetic_field_x": "motion",
+    "motion.magnetic_field_y": "motion",
+    "motion.magnetic_field_z": "motion",
+    "motion.magnetic_field_strength": "motion",
+    "motion.pitch": "motion",
+    "motion.roll": "motion",
+    "motion.yaw": "motion",
+    "motion.gravity_x": "motion",
+    "motion.gravity_y": "motion",
+    "motion.gravity_z": "motion",
+    "motion.user_acceleration_x": "motion",
+    "motion.user_acceleration_y": "motion",
+    "motion.user_acceleration_z": "motion",
+    "motion.calibrated_rotation_x": "motion",
+    "motion.calibrated_rotation_y": "motion",
+    "motion.calibrated_rotation_z": "motion",
+    "motion.magnetic_accuracy": "motion",
+    "environment.pressure": "motion",
+    "environment.relative_altitude": "motion",
+    "activity.steps": "motion",
+    "activity.distance": "motion",
+    "activity.floors_ascended": "motion",
+    "activity.floors_descended": "motion",
+    "activity.pace": "motion",
+    "activity.cadence": "motion",
+    "activity.type": "motion",
+    "activity.confidence": "motion",
+    "device.orientation": "motion",
     "proximity.state": "motion",
     "environment.light_lux": "motion",
     "environment.ambient_temperature_c": "motion",
     "audio.sound_level": "audio",
+    "audio.peak_level": "audio",
+    "audio.rolling_average": "audio",
     "audio.active": "audio",
     "camera.active": "camera",
     "network.queue_depth": "network",
@@ -35,7 +71,44 @@ STREAM_MODULES = {
 ENTITY_CAPABILITIES = {
     "location.gps": "location.gps",
     "motion.acceleration_rms": "sensor.accelerometer",
+    "motion.acceleration_x": "sensor.accelerometer",
+    "motion.acceleration_y": "sensor.accelerometer",
+    "motion.acceleration_z": "sensor.accelerometer",
     "motion.rotation_rate": "sensor.gyroscope",
+    "motion.rotation_x": "sensor.gyroscope",
+    "motion.rotation_y": "sensor.gyroscope",
+    "motion.rotation_z": "sensor.gyroscope",
+    "motion.magnetic_field_x": "sensor.magnetometer",
+    "motion.magnetic_field_y": "sensor.magnetometer",
+    "motion.magnetic_field_z": "sensor.magnetometer",
+    "motion.magnetic_field_strength": "sensor.magnetometer",
+    "motion.pitch": "sensor.device_motion",
+    "motion.roll": "sensor.device_motion",
+    "motion.yaw": "sensor.device_motion",
+    "motion.gravity_x": "sensor.device_motion",
+    "motion.gravity_y": "sensor.device_motion",
+    "motion.gravity_z": "sensor.device_motion",
+    "motion.user_acceleration_x": "sensor.device_motion",
+    "motion.user_acceleration_y": "sensor.device_motion",
+    "motion.user_acceleration_z": "sensor.device_motion",
+    "motion.calibrated_rotation_x": "sensor.device_motion",
+    "motion.calibrated_rotation_y": "sensor.device_motion",
+    "motion.calibrated_rotation_z": "sensor.device_motion",
+    "motion.magnetic_accuracy": "sensor.device_motion",
+    "environment.pressure": "sensor.barometer",
+    "environment.relative_altitude": "sensor.barometer",
+    "activity.steps": "sensor.pedometer",
+    "activity.distance": "sensor.pedometer",
+    "activity.floors_ascended": "sensor.pedometer",
+    "activity.floors_descended": "sensor.pedometer",
+    "activity.pace": "sensor.pedometer",
+    "activity.cadence": "sensor.pedometer",
+    "activity.type": "sensor.motion_activity",
+    "activity.confidence": "sensor.motion_activity",
+    "device.orientation": "sensor.orientation",
+    "location.heading_magnetic": "location.heading",
+    "location.heading_true": "location.heading",
+    "location.heading_accuracy": "location.heading",
     "proximity.state": "sensor.proximity",
     "environment.light_lux": "sensor.light",
     "environment.ambient_temperature_c": "sensor.ambient_temperature",
@@ -44,6 +117,8 @@ ENTITY_CAPABILITIES = {
     "battery.level": "system.battery",
     "power.charging": "system.battery",
     "audio.sound_level": "audio.microphone",
+    "audio.peak_level": "audio.microphone",
+    "audio.rolling_average": "audio.microphone",
     "audio.active": "audio.microphone",
     "camera.active": "camera.rear.0",
     "network.queue_depth": "system.network",
@@ -52,6 +127,10 @@ ENTITY_CAPABILITIES = {
     "network.transport": "system.network",
     "network.validated": "system.network",
     "network.metered": "system.network",
+    "display.brightness": "system.screen_brightness",
+    "system.low_power_mode": "system.low_power_mode",
+    "storage.available": "system.storage",
+    "storage.total": "system.storage",
     "bluetooth.advertisements_seen": "bluetooth.passive_scanner",
     "bluetooth.advertisements_forwarded": "bluetooth.passive_scanner",
     "bluetooth.advertisements_deduplicated": "bluetooth.passive_scanner",
@@ -139,6 +218,8 @@ def module_for_entity_key(key: str) -> str | None:
     """Return the configuration module that controls an entity key."""
     if key.startswith("camera."):
         return "camera"
+    if key.startswith("location.heading_"):
+        return "location"
     return STREAM_MODULES.get(key)
 
 
@@ -185,6 +266,7 @@ def entity_supported_and_enabled(
 class PhoneSenseEntity(CoordinatorEntity[PhoneSenseCoordinator]):
     _attr_has_entity_name = True
     _require_runtime_support = True
+    _ignore_module_gate = False
 
     def __init__(self, coordinator: PhoneSenseCoordinator, key: str) -> None:
         super().__init__(coordinator)
@@ -209,7 +291,9 @@ class PhoneSenseEntity(CoordinatorEntity[PhoneSenseCoordinator]):
         stale_after = stale_after_seconds(self.coordinator.device)
         fresh = self.coordinator.device.last_seen is not None and (datetime.now(timezone.utc) - self.coordinator.device.last_seen).total_seconds() <= stale_after
         return super().available and supported and fresh and (
-            controlling_module is None or module_enabled(self.coordinator, controlling_module)
+            self._ignore_module_gate
+            or controlling_module is None
+            or module_enabled(self.coordinator, controlling_module)
         )
 
     @property

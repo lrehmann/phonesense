@@ -108,6 +108,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     scanner, unregister, scanner_cleanup = async_register_remote_scanner(hass, device.device_id, coordinator)
     hass.data[DOMAIN]["scanners"][device.device_id] = (scanner, unregister, scanner_cleanup)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    # Run registry cleanup again after platform forwarding. Home Assistant may
+    # restore an existing registry row while a platform is being set up even
+    # when the replacement entity intentionally omits that legacy control.
+    _remove_unsupported_control_entities(hass, entry, device)
     return True
 
 
@@ -228,6 +232,27 @@ def _remove_unsupported_control_entities(hass: HomeAssistant, entry: ConfigEntry
         if control_supported(device, capability_key):
             continue
         entity_id = registry.async_get_entity_id(platform, DOMAIN, f"{device.device_id}_{unique_key}")
+        if entity_id:
+            registry.async_remove(entity_id)
+
+    individually_controllable = {
+        capability_id
+        for capability_id, capability in device.capabilities.items()
+        if capability.metadata.get("controllable") is True and capability.status != "unsupported"
+    }
+    shadowed_modules = {
+        "location": any(capability_id.startswith("location.") for capability_id in individually_controllable),
+        "motion": any(capability_id.startswith("sensor.") for capability_id in individually_controllable),
+        "network": "system.network" in individually_controllable,
+        "camera": any(
+            capability_id.startswith("camera.") and capability.status != "unsupported"
+            for capability_id, capability in device.capabilities.items()
+        ),
+    }
+    for unique_key, shadowed in shadowed_modules.items():
+        if not shadowed:
+            continue
+        entity_id = registry.async_get_entity_id("switch", DOMAIN, f"{device.device_id}_{unique_key}")
         if entity_id:
             registry.async_remove(entity_id)
 

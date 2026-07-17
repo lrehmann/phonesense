@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.2
+
+- Add capability-driven iOS telemetry for magnetometer, device motion and attitude, barometer, pedometer, motion activity, proximity, orientation, heading, screen brightness, storage, low-power mode, and audio levels.
+- Add per-camera iOS brightness, motion, person-detection, and occupancy telemetry when the camera and operating system support it.
+- Generate Home Assistant enable switches from each phone's reported capabilities and remove duplicate module-level switches.
+- Keep each supported camera's stream switch available independently so front and rear camera controls are clear.
+- Refresh Home Assistant entities automatically when a phone uploads a changed capability document.
+
 ## 0.1.1
 
 - Prevent camera start/stop commands from blocking the Android service main thread behind encrypted-media database work.

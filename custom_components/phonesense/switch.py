@@ -8,6 +8,26 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .coordinator import PhoneSenseCoordinator
 from .entity import PhoneSenseEntity, camera_controls, camera_device_info, camera_setting_state, control_supported
 
+CAPABILITY_SWITCH_NAMES = {
+    "location.gps": "GPS",
+    "location.heading": "Compass heading",
+    "sensor.accelerometer": "Accelerometer",
+    "sensor.barometer": "Barometer",
+    "sensor.device_motion": "Device motion",
+    "sensor.gyroscope": "Gyroscope",
+    "sensor.magnetometer": "Magnetometer",
+    "sensor.motion_activity": "Motion activity",
+    "sensor.orientation": "Orientation",
+    "sensor.pedometer": "Pedometer",
+    "sensor.proximity": "Proximity",
+    "system.battery": "Battery telemetry",
+    "system.low_power_mode": "Low power status",
+    "system.network": "Network diagnostics",
+    "system.screen_brightness": "Screen brightness telemetry",
+    "system.storage": "Storage telemetry",
+    "system.thermal_state": "Thermal status",
+}
+
 
 class PhoneSenseSwitch(PhoneSenseEntity, SwitchEntity):
     _require_runtime_support = False
@@ -27,6 +47,40 @@ class PhoneSenseSwitch(PhoneSenseEntity, SwitchEntity):
     async def async_turn_off(self, **kwargs) -> None:
         self.coordinator.device.health.setdefault("requested_modules", {})[self.key] = False
         await self.coordinator.async_queue_command("apply_configuration", {"modules": {self.key: {"enabled": False}}})
+
+
+class PhoneSenseCapabilitySwitch(PhoneSenseEntity, SwitchEntity):
+    """Enable one runtime-discovered data source without duplicating hardware sessions."""
+
+    _require_runtime_support = False
+
+    def __init__(self, coordinator: PhoneSenseCoordinator, capability_id: str, metadata: dict) -> None:
+        PhoneSenseEntity.__init__(self, coordinator, f"collect_{capability_id}")
+        self.capability_id = capability_id
+        self.default = bool(metadata.get("default_enabled", False))
+        label = capability_id.removeprefix("sensor.").removeprefix("system.").removeprefix("location.")
+        self._attr_name = CAPABILITY_SWITCH_NAMES.get(
+            capability_id,
+            label.replace("_", " ").replace(".", " ").title(),
+        )
+
+    @property
+    def is_on(self) -> bool:
+        states = self.coordinator.device.health.get("requested_capabilities", {})
+        return bool(states.get(self.capability_id, self.default)) if isinstance(states, dict) else self.default
+
+    async def _set_enabled(self, enabled: bool) -> None:
+        self.coordinator.device.health.setdefault("requested_capabilities", {})[self.capability_id] = enabled
+        await self.coordinator.async_queue_command(
+            "set_capability_enabled",
+            {"capability_id": self.capability_id, "enabled": enabled},
+        )
+
+    async def async_turn_on(self, **kwargs) -> None:
+        await self._set_enabled(True)
+
+    async def async_turn_off(self, **kwargs) -> None:
+        await self._set_enabled(False)
 
 
 class PhoneSenseVibrationSwitch(PhoneSenseEntity, SwitchEntity):
@@ -54,6 +108,8 @@ class PhoneSenseCameraSwitch(PhoneSenseEntity, SwitchEntity):
     several switches on; constrained devices report the camera they retained
     after atomically switching to the most recently enabled lens.
     """
+
+    _ignore_module_gate = True
 
     def __init__(self, coordinator: PhoneSenseCoordinator, camera_id: str, metadata: dict) -> None:
         PhoneSenseEntity.__init__(self, coordinator, camera_id)
@@ -124,6 +180,15 @@ class PhoneSenseLocalRecordingSwitch(PhoneSenseEntity, SwitchEntity):
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     coordinator = hass.data["phonesense"]["coordinators"][entry.data["device_id"]]
+    individually_controllable = {
+        capability_id
+        for capability_id, capability in coordinator.device.capabilities.items()
+        if capability.metadata.get("controllable") is True and capability.status != "unsupported"
+    }
+    has_camera_switches = any(
+        capability_id.startswith("camera.") and capability.status != "unsupported"
+        for capability_id, capability in coordinator.device.capabilities.items()
+    )
     modules = (
         ("location", "Location tracking"),
         ("motion", "Motion sensors"),
@@ -132,7 +197,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         ("camera", "Allow camera features"),
         ("audio", "Microphone monitoring"),
     )
-    entities = [PhoneSenseSwitch(coordinator, key, name) for key, name in modules if control_supported(coordinator.device, key)]
+    shadowed_modules = {
+        "location": any(capability_id.startswith("location.") for capability_id in individually_controllable),
+        "motion": any(capability_id.startswith("sensor.") for capability_id in individually_controllable),
+        "network": "system.network" in individually_controllable,
+        "camera": has_camera_switches,
+    }
+    entities = [
+        PhoneSenseSwitch(coordinator, key, name)
+        for key, name in modules
+        if control_supported(coordinator.device, key) and not shadowed_modules.get(key, False)
+    ]
+    entities.extend(
+        PhoneSenseCapabilitySwitch(coordinator, capability_id, capability.metadata)
+        for capability_id, capability in coordinator.device.capabilities.items()
+        if capability.metadata.get("controllable") is True
+        and capability.status != "unsupported"
+        and not capability_id.startswith("camera.")
+        and capability_id not in {"display.screen", "audio.microphone"}
+    )
     entities.extend(
         PhoneSenseCameraSwitch(coordinator, key, capability.metadata)
         for key, capability in coordinator.device.capabilities.items()
