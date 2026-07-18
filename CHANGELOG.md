@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.15
+
+- Make capability-backed sensors unavailable until the phone supplies a real value, including literal `unknown`, `unavailable`, `none`, or `null` payloads.
+- Preserve requested capability switches and effective configuration while older phone builds are upgraded.
+- Add a lightweight freshness tick so an offline phone transitions restored entity values to unavailable without network polling.
+- Harden camera-control selectors so each lens exposes only supported choices and stale selections recover cleanly.
+- Keep empty telemetry queues numeric at zero rather than ambiguous.
+
 ## 0.1.9
 
 - Keep camera and microphone activity entities tied to current runtime state instead of stale telemetry.

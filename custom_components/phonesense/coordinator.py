@@ -19,10 +19,21 @@ from .repairs import update_device_issues
 
 
 class PhoneSenseCoordinator(DataUpdateCoordinator[dict[str, Any]]):
-    """Push coordinator: no polling is used; API calls call async_set_updated_data."""
+    """Push coordinator with a local freshness tick.
+
+    Phone traffic still arrives exclusively through push endpoints. The
+    lightweight timer only asks entities to recompute staleness so an offline
+    phone transitions from a restored value or ``unknown`` to ``unavailable``
+    without waiting forever for another push that cannot arrive.
+    """
 
     def __init__(self, hass: HomeAssistant, store: PhoneSenseStore, device: PhoneSenseDevice) -> None:
-        super().__init__(hass, logger=__import__("logging").getLogger(DOMAIN), name=f"PhoneSense {device.name}")
+        super().__init__(
+            hass,
+            logger=__import__("logging").getLogger(DOMAIN),
+            name=f"PhoneSense {device.name}",
+            update_interval=timedelta(seconds=60),
+        )
         self.store = store
         self.device = device
         # Live camera frames are intentionally transient. Persisting them would
@@ -33,6 +44,11 @@ class PhoneSenseCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.device.health.setdefault("effective_configuration", self._default_configuration())
         self._mirror_configuration(self.device.health["effective_configuration"])
         self.data = self._as_data()
+
+    async def _async_update_data(self) -> dict[str, Any]:
+        """Notify entities to recompute freshness without contacting the phone."""
+        update_device_issues(self.hass, self.device)
+        return self._as_data()
 
     def set_live_frame(
         self,
@@ -448,11 +464,21 @@ class PhoneSenseCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_set_health(self, payload: dict[str, Any]) -> None:
         previous_configuration = self.device.health.get("effective_configuration")
+        previous_requested_capabilities = self.device.health.get("requested_capabilities")
         self.device.health = payload
         if isinstance(payload.get("effective_configuration"), dict):
             self._mirror_configuration(payload["effective_configuration"])
         elif isinstance(previous_configuration, dict):
+            self.device.health["effective_configuration"] = previous_configuration
             self._mirror_configuration(previous_configuration)
+        if (
+            "requested_capabilities" not in payload
+            and isinstance(previous_requested_capabilities, dict)
+        ):
+            # Older app versions do not include this field. Keep optimistic
+            # switch state through rolling upgrades instead of snapping every
+            # per-sensor control back to its metadata default.
+            self.device.health["requested_capabilities"] = previous_requested_capabilities
         queue = payload.get("queue") if isinstance(payload.get("queue"), dict) else {}
         observed_at = payload.get("last_sync_at") or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         if "pending" in queue:
