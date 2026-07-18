@@ -83,6 +83,54 @@ class PhoneSenseCapabilitySwitch(PhoneSenseEntity, SwitchEntity):
         await self._set_enabled(False)
 
 
+class PhoneSenseAudioSwitch(PhoneSenseEntity, SwitchEntity):
+    """Control microphone monitoring with explicit local arming.
+
+    Audio is privacy-sensitive and must not be started indirectly by a generic
+    configuration update. The app reports the actual capture-session state,
+    so the switch cannot remain on when the audio engine has stopped.
+    """
+
+    _require_runtime_support = False
+    _ignore_module_gate = True
+
+    def __init__(self, coordinator: PhoneSenseCoordinator) -> None:
+        PhoneSenseEntity.__init__(self, coordinator, "audio")
+        self._attr_name = "Microphone monitoring (arm on phone)"
+
+    @property
+    def is_on(self) -> bool:
+        return self.coordinator.device.health.get("modules", {}).get("audio") == "active"
+
+    @property
+    def extra_state_attributes(self):
+        errors = self.coordinator.device.health.get("module_errors", {})
+        return {
+            "configured": bool(self.coordinator.device.health.get("requested_modules", {}).get("audio", False)),
+            "local_arming_required": True,
+            "last_error": errors.get("audio") if isinstance(errors, dict) else None,
+        }
+
+    async def async_turn_on(self, **kwargs) -> None:
+        self.coordinator.device.health.setdefault("requested_modules", {})["audio"] = True
+        await self.coordinator.async_queue_command(
+            "apply_configuration",
+            {"modules": {"audio": {"enabled": True}}},
+        )
+        await self.coordinator.async_queue_command(
+            "start_audio_session",
+            requires_local_arming=True,
+        )
+
+    async def async_turn_off(self, **kwargs) -> None:
+        self.coordinator.device.health.setdefault("requested_modules", {})["audio"] = False
+        await self.coordinator.async_queue_command("stop_audio_session")
+        await self.coordinator.async_queue_command(
+            "apply_configuration",
+            {"modules": {"audio": {"enabled": False}}},
+        )
+
+
 class PhoneSenseVibrationSwitch(PhoneSenseEntity, SwitchEntity):
     def __init__(self, coordinator: PhoneSenseCoordinator) -> None:
         PhoneSenseEntity.__init__(self, coordinator, "actuator.vibration")
@@ -202,6 +250,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         "motion": any(capability_id.startswith("sensor.") for capability_id in individually_controllable),
         "network": "system.network" in individually_controllable,
         "camera": has_camera_switches,
+        "audio": True,
     }
     entities = [
         PhoneSenseSwitch(coordinator, key, name)
@@ -221,6 +270,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         for key, capability in coordinator.device.capabilities.items()
         if key.startswith("camera.") and capability.status != "unsupported"
     )
+    if control_supported(coordinator.device, "audio"):
+        entities.append(PhoneSenseAudioSwitch(coordinator))
     if control_supported(coordinator.device, "camera"):
         for camera_id, capability in coordinator.device.capabilities.items():
             if not camera_id.startswith("camera.") or capability.status == "unsupported":

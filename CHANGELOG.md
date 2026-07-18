@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.9
+
+- Keep camera and microphone activity entities tied to current runtime state instead of stale telemetry.
+- Preserve first-frame and recovery camera availability while supporting Android concurrent sessions and iOS exclusive front/rear handoff.
+- Add per-camera snapshot, recording, clip-length, and hardware-discovered control entities with clearer names and capability gating.
+- Expose iOS per-sensor switches, screen light controls, extended numeric telemetry, and stable camera analytics.
+- Add Android media-browser recording support, Bluetooth health diagnostics, and truthful unavailable sound-level handling.
+- Harden durable sequence acknowledgement, queue-floor recovery, diagnostic redaction, and instance-bound command delivery.
+
 ## 0.1.3
 
 - Reflect an authenticated live camera frame immediately in Home Assistant instead of waiting for the phone's next periodic health upload.

@@ -63,6 +63,7 @@ STREAM_MODULES = {
     "bluetooth.advertisements_seen": "ble_proxy",
     "bluetooth.advertisements_forwarded": "ble_proxy",
     "bluetooth.advertisements_deduplicated": "ble_proxy",
+    "bluetooth.advertisements_dropped": "ble_proxy",
     "bluetooth.last_advertisement": "ble_proxy",
     "bluetooth.adapter": "ble_proxy",
     "bluetooth.permission": "ble_proxy",
@@ -134,6 +135,7 @@ ENTITY_CAPABILITIES = {
     "bluetooth.advertisements_seen": "bluetooth.passive_scanner",
     "bluetooth.advertisements_forwarded": "bluetooth.passive_scanner",
     "bluetooth.advertisements_deduplicated": "bluetooth.passive_scanner",
+    "bluetooth.advertisements_dropped": "bluetooth.passive_scanner",
     "bluetooth.last_advertisement": "bluetooth.passive_scanner",
     "bluetooth.adapter": "bluetooth.passive_scanner",
     "bluetooth.permission": "bluetooth.passive_scanner",
@@ -236,6 +238,28 @@ def module_enabled(coordinator: PhoneSenseCoordinator, module: str) -> bool:
     modules = configuration.get("modules", {}) if isinstance(configuration, dict) else {}
     value = modules.get(module) if isinstance(modules, dict) else None
     return isinstance(value, dict) and value.get("enabled") is True
+
+
+def runtime_module_active(coordinator: PhoneSenseCoordinator, module: str) -> bool:
+    """Return actual module execution, never merely requested configuration."""
+    runtime_modules = coordinator.device.health.get("modules", {})
+    if isinstance(runtime_modules, dict) and module in runtime_modules:
+        return runtime_modules.get(module) == "active"
+    state = coordinator.device.streams.get(f"{module}.active")
+    return state is not None and state.value is True
+
+
+_ACTIVE_MEASUREMENT_MODULES = {
+    "audio.sound_level": "audio",
+    "audio.peak_level": "audio",
+    "audio.rolling_average": "audio",
+}
+
+
+def measurement_runtime_available(coordinator: PhoneSenseCoordinator, key: str) -> bool:
+    """Gate live measurements that are meaningless while capture is stopped."""
+    module = _ACTIVE_MEASUREMENT_MODULES.get(key)
+    return module is None or runtime_module_active(coordinator, module)
 
 
 def entity_supported(

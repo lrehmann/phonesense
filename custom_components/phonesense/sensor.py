@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .coordinator import PhoneSenseCoordinator
-from .entity import PhoneSenseEntity, camera_device_info, entity_supported
+from .entity import PhoneSenseEntity, camera_device_info, entity_supported, measurement_runtime_available
 
 STREAMS = {
     "battery.level": ("Battery level", SensorDeviceClass.BATTERY, PERCENTAGE, SensorStateClass.MEASUREMENT),
@@ -69,6 +69,7 @@ STREAMS = {
     "bluetooth.advertisements_seen": ("Bluetooth advertisements seen", None, "advertisements", None),
     "bluetooth.advertisements_forwarded": ("Bluetooth advertisements forwarded", None, "advertisements", None),
     "bluetooth.advertisements_deduplicated": ("Bluetooth advertisements deduplicated", None, "advertisements", None),
+    "bluetooth.advertisements_dropped": ("Bluetooth advertisements dropped", None, "advertisements", None),
     "bluetooth.last_advertisement": ("Last Bluetooth advertisement", None, None, None),
     "bluetooth.adapter": ("Bluetooth adapter", None, None, None),
     "bluetooth.permission": ("Bluetooth permission", None, None, None),
@@ -133,6 +134,7 @@ CAPABILITIES = {
     "bluetooth.advertisements_seen": "bluetooth.passive_scanner",
     "bluetooth.advertisements_forwarded": "bluetooth.passive_scanner",
     "bluetooth.advertisements_deduplicated": "bluetooth.passive_scanner",
+    "bluetooth.advertisements_dropped": "bluetooth.passive_scanner",
     "bluetooth.last_advertisement": "bluetooth.passive_scanner",
     "bluetooth.adapter": "bluetooth.passive_scanner",
     "bluetooth.permission": "bluetooth.passive_scanner",
@@ -149,6 +151,7 @@ DIAGNOSTIC_STREAMS = {
     "bluetooth.advertisements_seen",
     "bluetooth.advertisements_forwarded",
     "bluetooth.advertisements_deduplicated",
+    "bluetooth.advertisements_dropped",
     "bluetooth.last_advertisement",
     "bluetooth.adapter",
     "bluetooth.permission",
@@ -171,6 +174,10 @@ class PhoneSenseSensor(PhoneSenseEntity, SensorEntity):
             self._attr_entity_category = EntityCategory.DIAGNOSTIC
         if key in NOISY_DIAGNOSTICS:
             self._attr_entity_registry_enabled_default = False
+
+    @property
+    def available(self) -> bool:
+        return super().available and measurement_runtime_available(self.coordinator, self.key)
 
     @property
     def native_value(self):
@@ -196,6 +203,7 @@ class PhoneSenseSensor(PhoneSenseEntity, SensorEntity):
                 "bluetooth.advertisements_seen": "seen",
                 "bluetooth.advertisements_forwarded": "forwarded",
                 "bluetooth.advertisements_deduplicated": "deduplicated",
+                "bluetooth.advertisements_dropped": "dropped",
                 "bluetooth.last_advertisement": "last_advertisement_at",
                 "bluetooth.adapter": "adapter",
                 "bluetooth.permission": "permission",

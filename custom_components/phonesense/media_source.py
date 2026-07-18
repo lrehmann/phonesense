@@ -34,11 +34,15 @@ class PhoneSenseMediaSource(MediaSource):
         recording_path = path / f"{recording_id}.mp4" if path else None
         if recording_path is None or not recording_path.is_file():
             raise Unresolvable("Recording not found.")
-        return PlayMedia(
-            f"{API_BASE}/devices/{device_id}/recordings/{recording_id}",
-            "video/mp4",
-            path=recording_path,
-        )
+        url = f"{API_BASE}/devices/{device_id}/recordings/{recording_id}"
+        try:
+            # Newer Home Assistant releases accept the source path so the
+            # media pipeline can use the local file directly when appropriate.
+            return PlayMedia(url, "video/mp4", path=recording_path)
+        except TypeError:
+            # Home Assistant releases in the Python 3.12 compatibility window
+            # expose only the original two-argument PlayMedia constructor.
+            return PlayMedia(url, "video/mp4")
 
     async def async_browse_media(self, item: MediaSourceItem) -> BrowseMediaSource:
         # Home Assistant represents the source root with a null identifier.
