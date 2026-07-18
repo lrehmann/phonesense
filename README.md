@@ -28,7 +28,7 @@ Restart Home Assistant, then add **PhoneSense** from **Settings → Devices & se
 
 ## Android app
 
-The GitHub release includes `PhoneSense-Android.apk`, the latest Pixel-tested Android build. It is debug-signed for direct testing and sideloading, not Play Store distribution. Android may ask you to allow installation from the browser or file manager used to open it.
+The GitHub release includes `PhoneSense-Android.apk`, the latest API 23/28/31/35-tested Android build. It is debug-signed for direct testing and sideloading, not Play Store distribution. Android may ask you to allow installation from the browser or file manager used to open it.
 
 SHA-256 checksums are included in the release notes.
 

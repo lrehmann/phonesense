@@ -7,8 +7,14 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from datetime import datetime, timezone
 
 from .coordinator import PhoneSenseCoordinator
-from .entity import PhoneSenseEntity, camera_device_info, entity_supported
+from .entity import PhoneSenseEntity, camera_device_info, entity_supported, runtime_module_active
 from .models import stale_after_seconds
+
+
+RUNTIME_ACTIVITY_MODULES = {
+    "camera.active": "camera",
+    "audio.active": "audio",
+}
 
 
 STREAMS = {
@@ -31,9 +37,17 @@ class PhoneSenseBinarySensor(PhoneSenseEntity, BinarySensorEntity):
     def __init__(self, coordinator: PhoneSenseCoordinator, key: str) -> None:
         PhoneSenseEntity.__init__(self, coordinator, key)
         self._attr_name, self._attr_device_class = STREAMS[key]
+        # Activity sensors describe current execution, not whether the module
+        # is configured. Keep them available and explicitly off when capture
+        # is disabled or has stopped, rather than hiding them behind the
+        # configuration gate or retaining an old on sample.
+        self._ignore_module_gate = key in RUNTIME_ACTIVITY_MODULES
 
     @property
     def is_on(self):
+        runtime_module = RUNTIME_ACTIVITY_MODULES.get(self.key)
+        if runtime_module is not None:
+            return runtime_module_active(self.coordinator, runtime_module)
         value = self.native_value
         return value is True or value in ("on", "active", "charging", "near")
 

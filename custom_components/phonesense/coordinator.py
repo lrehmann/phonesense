@@ -73,6 +73,13 @@ class PhoneSenseCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             for active_camera_id in list(sessions):
                 if active_camera_id.startswith("camera.") and active_camera_id != camera_id:
                     sessions.pop(active_camera_id, None)
+                    # iOS exposes one AVFoundation capture session. Once a
+                    # frame proves that another lens has taken ownership, its
+                    # predecessor can no longer be live. Remove the old frame
+                    # now so Home Assistant does not display the inactive
+                    # camera as streaming until the generic five-second cache
+                    # window expires.
+                    self.live_frames.pop(active_camera_id, None)
                     changed = True
         existing = sessions.get(camera_id)
         if not isinstance(existing, dict) or existing.get("active") is not True:
@@ -289,6 +296,7 @@ class PhoneSenseCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def async_ingest_batch(self, payload: dict[str, Any]) -> dict[str, Any]:
         accepted_candidates: dict[tuple[str, str], list[tuple[int, int]]] = defaultdict(list)
         rejected: list[dict[str, Any]] = []
+        self._apply_queue_floors(payload)
         for sample in payload.get("samples", []):
             error = validate_sample(sample, self.device.device_id)
             if error:
@@ -364,6 +372,62 @@ class PhoneSenseCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         response["commands"] = await self.async_get_commands()
         response["pending_commands"] = len(response["commands"])
         return response
+
+    def _apply_queue_floors(self, payload: dict[str, Any]) -> None:
+        """Recover only gaps the authenticated phone proves it no longer retains."""
+        samples = payload.get("samples", [])
+        if not isinstance(samples, list):
+            return
+        valid_first_sequences: dict[tuple[str, str], int] = {}
+        for sample in samples:
+            if not isinstance(sample, dict) or validate_sample(sample, self.device.device_id):
+                continue
+            key = (sample["boot_id"], sample["stream_id"])
+            valid_first_sequences[key] = min(valid_first_sequences.get(key, sample["sequence"]), sample["sequence"])
+
+        recoveries: list[dict[str, Any]] = []
+        total_skipped = 0
+        floors = payload.get("queue_floors", [])
+        if not isinstance(floors, list):
+            return
+        for floor in floors[:10_000]:
+            if not isinstance(floor, dict):
+                continue
+            boot_id = floor.get("boot_id")
+            stream_id = floor.get("stream_id")
+            first_sequence = floor.get("first_sequence")
+            if (
+                not isinstance(boot_id, str)
+                or not boot_id
+                or not isinstance(stream_id, str)
+                or not stream_id
+                or not isinstance(first_sequence, int)
+                or first_sequence < 0
+            ):
+                continue
+            key = (boot_id, stream_id)
+            if valid_first_sequences.get(key) != first_sequence:
+                continue
+            watermark = self._watermark(key)
+            # The normal first-Bridge baseline already handles watermark -1.
+            # Floors repair only an established stream with an unreplayable gap.
+            if watermark < 0 or first_sequence <= watermark + 1:
+                continue
+            skipped = first_sequence - watermark - 1
+            self._set_watermark(key, first_sequence - 1)
+            total_skipped += skipped
+            recoveries.append({
+                "boot_id": boot_id,
+                "stream_id": stream_id,
+                "from_sequence": watermark + 1,
+                "through_sequence": first_sequence - 1,
+                "count": skipped,
+            })
+        if recoveries:
+            audit = self.device.health.setdefault("queue_floor_recovery", {})
+            audit["recovered_missing_sequences"] = int(audit.get("recovered_missing_sequences", 0)) + total_skipped
+            audit["last_recoveries"] = recoveries[-20:]
+            audit["last_recovered_at"] = datetime.now(timezone.utc).isoformat()
 
     def _watermark(self, key: tuple[str, str]) -> int:
         return int(self.store.data.setdefault("devices", {}).setdefault(self.device.device_id, {}).setdefault("watermarks", {}).get("/".join(key), -1))
