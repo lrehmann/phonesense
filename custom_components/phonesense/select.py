@@ -2,31 +2,62 @@ from __future__ import annotations
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .coordinator import PhoneSenseCoordinator
 from .entity import PhoneSenseEntity, camera_controls, camera_device_info, camera_setting_state, control_supported
+
+PROFILE_OPTIONS = {
+    "stationary_sensor": "Stationary sensor",
+    "camera_monitor": "Camera monitor",
+    "mobile_tracker": "Mobile tracker",
+    "bluetooth_proxy": "Bluetooth proxy",
+    "low_power": "Low power",
+    "custom": "Custom",
+}
+
+
+def profile_option(value: object) -> str:
+    """Translate the protocol profile identifier to an exact HA select option."""
+    return PROFILE_OPTIONS.get(str(value), "Custom")
+
+
+def device_profile_option(coordinator: PhoneSenseCoordinator) -> str:
+    """Return the current profile for devices including older stored records."""
+    health = getattr(coordinator.device, "health", {})
+    value = health.get("profile", "stationary_sensor") if isinstance(health, dict) else "stationary_sensor"
+    return profile_option(value)
 
 
 class PhoneSenseProfile(PhoneSenseEntity, SelectEntity):
     _require_runtime_support = False
 
     _attr_name = "Usage preset"
-    _attr_options = ["Stationary sensor", "Camera monitor", "Mobile tracker", "Bluetooth proxy", "Low power", "Custom"]
+    _attr_options = list(PROFILE_OPTIONS.values())
 
     def __init__(self, coordinator: PhoneSenseCoordinator) -> None:
+        # SelectEntity.current_option is cached, so seed it before Entity init can
+        # read the state during registration.
+        self._attr_current_option = device_profile_option(coordinator)
         PhoneSenseEntity.__init__(self, coordinator, "profile")
         self._attr_name = "Usage preset"
 
     @property
-    def current_option(self):
-        value = self.coordinator.device.health.get("profile", "stationary_sensor")
-        return str(value).replace("_", " ").title()
+    def current_option(self) -> str:
+        """Return the current option without SelectEntity's one-time cache."""
+        return self._attr_current_option
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self._attr_current_option = device_profile_option(self.coordinator)
+        super()._handle_coordinator_update()
 
     async def async_select_option(self, option: str) -> None:
-        value = option.lower().replace(" ", "_")
+        value = next((value for value, label in PROFILE_OPTIONS.items() if label == option), "custom")
         self.coordinator.device.health["profile"] = value
+        self._attr_current_option = profile_option(value)
+        self.async_write_ha_state()
         await self.coordinator.async_queue_command("apply_configuration", {"profile": value})
 
 

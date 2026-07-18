@@ -177,7 +177,20 @@ class PhoneSenseSensor(PhoneSenseEntity, SensorEntity):
 
     @property
     def available(self) -> bool:
-        return super().available and measurement_runtime_available(self.coordinator, self.key)
+        # A capability means the phone can produce this measurement; it does
+        # not mean a sample has actually arrived. Report unavailable until a
+        # real value exists so Home Assistant never presents a supported but
+        # silent sensor as the ambiguous state "unknown".
+        value = self.native_value
+        return (
+            super().available
+            and measurement_runtime_available(self.coordinator, self.key)
+            and value is not None
+            and not (
+                isinstance(value, str)
+                and value.strip().lower() in {"unknown", "unavailable", "none", "null"}
+            )
+        )
 
     @property
     def native_value(self):
@@ -185,6 +198,8 @@ class PhoneSenseSensor(PhoneSenseEntity, SensorEntity):
             queue = self.coordinator.device.health.get("queue", {})
             if not isinstance(queue, dict):
                 return None
+            if queue.get("pending") == 0 or queue.get("samples") == 0:
+                return 0
             if isinstance(queue.get("oldest_age_seconds"), (int, float)):
                 return queue["oldest_age_seconds"]
             if isinstance(queue.get("oldest_age_ms"), (int, float)):
@@ -249,6 +264,10 @@ class PhoneSenseCameraAnalysisSensor(PhoneSenseEntity, SensorEntity):
         self._attr_state_class = SensorStateClass.MEASUREMENT
         capability = coordinator.device.capabilities.get(camera_id)
         self._attr_device_info = camera_device_info(coordinator, camera_id, capability.metadata if capability else {})
+
+    @property
+    def available(self) -> bool:
+        return super().available and self.native_value is not None
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:

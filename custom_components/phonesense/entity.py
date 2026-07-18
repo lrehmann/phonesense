@@ -257,9 +257,17 @@ _ACTIVE_MEASUREMENT_MODULES = {
 
 
 def measurement_runtime_available(coordinator: PhoneSenseCoordinator, key: str) -> bool:
-    """Gate live measurements that are meaningless while capture is stopped."""
+    """Gate live measurements that are missing or invalid while capture is stopped."""
     module = _ACTIVE_MEASUREMENT_MODULES.get(key)
-    return module is None or runtime_module_active(coordinator, module)
+    if module is None:
+        return True
+    if not runtime_module_active(coordinator, module):
+        return False
+    module_errors = coordinator.device.health.get("module_errors", {})
+    if isinstance(module_errors, dict) and module_errors.get(module):
+        return False
+    state = coordinator.device.streams.get(key)
+    return state is not None and state.value is not None
 
 
 def entity_supported(
